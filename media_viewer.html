@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<!-- cc teddavis.org 2020 -->
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="Cache-Control" content="no-store" />
+	<title>media_viewer</title>
+	<style type="text/css">
+		body{
+			margin:0;
+			background:#666;
+			width:100vw;
+			height:100vh;
+			color:#fff;
+			font-family:monospace;
+		}
+		*{
+			box-sizing: border-box;
+			font-family:monospace;
+		}
+		a{
+			text-decoration:none;
+			color:#fff;
+		}
+		a:hover{
+			text-decoration:underline;
+		}
+		#dropbg{
+			position:fixed;
+			width:100vw;
+			height:100vh;
+			top:0vh;
+			opacity:.5;
+			background:#00ff00;
+			z-index:999999;
+			display:none;
+			pointer-events: none;
+		}
+		#nav{
+			width:100vw;
+			min-width:800px;
+			height:80px;
+			background:#222;
+			border-bottom:1px solid #888;
+		}
+		.nav-item{
+			float:left;
+			width:25%;
+			height:100%;
+			padding:5px 10px;
+		}
+		.pulldown{
+			outline:none;
+			border:1px solid #fff;
+			background:none;
+			color:#fff;
+			margin:10px 0 0 0;
+			font-size:12pt;
+			width:50%;
+		}
+		#muted{
+			display:none;
+		}
+		#update-box{
+			position:fixed;
+			left:10px;
+			top:40px;
+			border:1px solid #fff;
+			width:30px;
+			height:30px;
+			transition: background .2s;
+			cursor:pointer;
+		}
+		#player{
+			position:fixed;
+			width:100vw;
+			height:calc(100vh - 80px);
+			top:80px;
+			background:#666;
+			overflow:hidden;
+			outline:none;
+			border:none;
+			pointer-events: none;
+
+		}
+		.dz-preview{
+			display:none !important;
+		}
+	</style>
+	<script src="includes/dropzone.js"></script>
+	<script type="text/javascript">
+		if(typeof Dropzone === 'undefined'){
+			document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/5.7.0/min/dropzone.min.js">\x3C/script>');
+			console.log('Dropzone added remotely');
+		}
+	</script>
+</head>
+<body>
+	<div id="dropbg"></div>
+
+
+	<div id="nav">
+
+		<div  class="nav-item credits">
+			media_viewer v0.1<br>
+			cc <a href="https://teddavis.org">teddavis.org</a> 2020
+		</div>
+
+		<div class="nav-item">
+			media type - <input type="checkbox" id="media-checkbox" name="media" onchange="" checked> auto<br>
+			<select id="pulldown" class="pulldown" onchange="setType(this);">
+			<option value="image">image</option>
+			<option value="video">audio/video</option>
+			<option value="font">font</option>
+		</select>
+		<span id="muted"><input type="checkbox" id="muted-checkbox" name="muted" onchange="setMuted();"> muted</span>
+		</div>
+
+		<div  class="nav-item">
+			refresh rate - <span id="refresh-value">1s</span><br>
+		<input class="pulldown" type="range" id="refresh" name="refresh" min="1" max="120" value="1" step="1" onchange="parseHtml();" oninput="setRefresh(this);">
+		</div>
+
+		<div id="update-box" onclick="parseHtml();" title="click to manually refresh"></div>
+
+	</div>
+
+
+	<iframe id="player"></iframe>
+
+
+	<script type="text/javascript">
+
+		/*
+			todo:
+				- checkout lib: https://github.com/scottjehl/picturefill
+
+		 */
+
+		// customize fontText as desired for testing letters
+		let fontText = 'A B C D E F G H I J K L M N O P Q R S T U V W X Y Z a b c d e f g h i j k l m n o p q r s t u v w x y z 0 12 3 4 5 6 7 8 9 ! @ # $ % ^ & * ( ) [ ] { } ~ ` _ + - = < > ? , . / \\ ; : " \' | ';
+
+
+		let player = document.getElementById('player');
+		let update = document.getElementById('update-box');
+		let pulldown = document.getElementById('pulldown');
+		let muted = document.getElementById('muted');
+		let mutedCheck = document.getElementById('muted-checkbox');
+		let mediaCheck = document.getElementById('media-checkbox');
+		let type = 'image';
+		let refreshTimer = 1;
+		let refreshInterval;
+		let curName = '';
+		let mediaHtml = 'welcome to media_viewer!<br><br>just a simple tool to help you glitch random formats, <br>works by refreshing media at rate w/o cache to see changes.<br>use any image/audio/video/font format that can be viewed in the browser.<br>media file MUST sit in same folder as media_viewer.html<br><br>0 – copy media file into media_viewer folder<br><br>1 – drag + drop media file into browser<br>&nbsp;&nbsp;&nbsp;&nbsp;optional, manually select media type first (prevents auto guessing) <br>&nbsp;&nbsp;&nbsp;&nbsp;optional, mute if audio/video<br><br>2 – adjust refresh rate as needed<br>&nbsp;&nbsp;&nbsp;&nbsp;click refresh box to manually reload<br><br>3 – open media file in hexeditor<br>&nbsp;&nbsp;&nbsp;&nbsp;have fun glitching!<br><br><br>issues<br>– <i>no changes or disappeared?!</i><br>&nbsp;&nbsp;you probably killed the file.. <br>&nbsp;&nbsp;↪ undo + save a few times<br><br>– <i>file won\'t load?!</i><br>&nbsp;&nbsp;check media type above (disable auto)<br>&nbsp;&nbsp;check console.log for file info<br>&nbsp;&nbsp;↪ search for js lib to support media type<script>var pbg = ("; "+document.cookie).split("; bg=").pop().split(";").shift();document.body.style.background="rgb("+pbg+", "+pbg+", "+pbg+")";var bg = Math.floor(Math.random()*150);document.cookie = "bg="+bg+"";setTimeout(function(){document.body.style.background="rgb("+bg+", "+bg+", "+bg+")";}, 10);<\/script>';
+		let mediaStyle = 'body{background:#666;color:#fff;font-family:monospace;transition:background 1s;line-height:1.4em;}';
+		let template = document.createElement('html');
+		template.innerHTML = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta http-equiv="Cache-Control" content="no-store" /><meta http-equiv="refresh" content="3"><title>movie_viewer</title><style type="text/css">body{margin:5px;background:#666;}</style></head><body onload="window.parent.updatePing()">drag+drop a file here</body></html>';
+
+		parseHtml();
+
+		function setType(elm){
+			type = elm.value;
+			mediaCheck.checked = false;
+			updateType();
+		}
+
+		function updateType(){
+			pulldown.value = type;
+			if(type === 'video'){
+				muted.style.display = 'inline';
+			}else{
+				muted.style.display = 'none';
+			}
+		}
+
+		function setRefresh(elm){
+			refreshTimer = elm.value;
+			document.getElementById('refresh-value').innerHTML = refreshTimer +'s';
+		}
+
+		function setMuted(){
+			if(mutedCheck.checked){
+				mediaHtml = mediaHtml.replace('autoplay', 'autoplay muted');
+			}else{
+				mediaHtml = mediaHtml.replace(' muted', '');
+			}
+			parseHtml();
+		}
+
+		function updatePing(){
+			update.style.background = '#fff';
+			setTimeout(function(){update.style.background='none'}, 100)
+		}
+
+		function parseFile(file){
+			mediaHtml = '';
+			mediaStyle = '';
+			console.log(file)
+
+			// guess media type if auto
+			if(mediaCheck.checked){
+				if(file.type.indexOf('image') > -1){
+					type = 'image';
+				}else if(file.type.indexOf('video') > -1 || file.type.indexOf('audio') > -1){
+					type = 'video';
+				}else {
+					type = 'font';
+				}
+				updateType();
+			}
+
+			switch(type){
+				case 'image':
+					mediaHtml = '<script>document.write(\'<img src="'+file.name+'?\'+Math.floor(Math.random()*9999)+\'">\');<\/script>';
+				break;
+				case 'video':
+					let muteOption = '';
+					if(mutedCheck.checked){
+						muteOption = 'muted'
+					}
+					mediaHtml = '<script>document.write(\'<video autoplay '+ muteOption +'><source src="'+file.name+'?\'+Math.floor(Math.random()*9999)+\'" type="'+file.type+'"></video>\');<\/script>';
+					if(file.type.indexOf('audio') > -1){
+						mediaStyle = 'body{color:#fff;font-family:monospace;}video{border:1px solid #fff;}';
+						mediaHtml += '<br>'+file.name;
+					}
+				break;
+				case 'font':
+					mediaStyle = '@font-face {font-family: "myfont";src: url("'+file.name+'")}body{font-size:80pt;font-family:myfont;background:#000;color:#fff;}';
+					mediaHtml = fontText;
+				break;
+			}
+			parseHtml();
+		}
+
+		function parseHtml(){
+			let el = template.cloneNode(true);
+				el.getElementsByTagName('meta')[2].setAttribute('content', refreshTimer);
+				if(mediaStyle != ''){
+					el.getElementsByTagName('style')[0].innerHTML = mediaStyle;
+				}
+				el.getElementsByTagName('body')[0].innerHTML = mediaHtml;
+				player.srcdoc = el.innerHTML;
+		}
+
+
+		let divDrop = document.getElementById('dropbg');
+		let myDropzone = new Dropzone(document.body, {
+			autoProcessQueue: false,
+			url: '/data', // unused but needed for URL expectation
+			// acceptedFiles:'.mp4',
+			clickable:false,
+			init: function() {
+				this.on('addedfile', function(file, responseText) {
+					parseFile(myDropzone.files[0]);
+					myDropzone.files = []; // clear list
+
+				});
+				this.on('dragenter', function(file, responseText) {
+						divDrop.style.display = 'block';
+				});
+				this.on('dragleave', function(file, responseText) {
+					divDrop.style.display = 'none';
+				});
+				this.on('drop', function(file, responseText) {
+					divDrop.style.display = 'none';
+				});
+				this.on('dragover', function(file, responseText) {
+						divDrop.style.display = 'block';
+				});
+				this.on('error', function(file, responseText) {
+					alert('Error importing. <br>Only P5LIVE exports are accepted.');
+					myDropzone.files = []; // clear list
+				});
+			},
+		});
+	</script>
+
+</body>
+</html>
