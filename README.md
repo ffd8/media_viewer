@@ -1,4 +1,5 @@
 # media_viewer
+v0.2  
 cc [teddavis.org](https://teddavis.org) 2020 – 22  
  
 just a simple tool to help you glitch file formats.   
